@@ -82,11 +82,9 @@ public class UnityAgentServer
     {
         try
         {
-            using (var probe = new System.Net.Sockets.TcpListener(IPAddress.Loopback, port))
-            {
-                probe.Start();
-                probe.Stop();
-            }
+            var probe = new System.Net.Sockets.TcpListener(IPAddress.Loopback, port);
+            probe.Start();
+            probe.Stop();
             return true;
         }
         catch { return false; }
