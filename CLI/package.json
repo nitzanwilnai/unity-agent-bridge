@@ -1,6 +1,6 @@
 {
   "name": "unity-agent-cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "CLI for AI agents to check Unity compilation and execute editor methods.",
   "main": "index.js",
   "bin": {

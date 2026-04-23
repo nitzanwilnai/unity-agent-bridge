@@ -1,6 +1,6 @@
 {
     "name": "com.unityagentbridge.server",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "displayName": "Unity Agent Bridge",
     "description": "HTTP server inside the Unity Editor that lets CLI-based AI agents check compilation errors and execute static methods.",
     "unity": "2021.3",

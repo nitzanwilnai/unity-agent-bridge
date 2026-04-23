@@ -43,7 +43,21 @@ unity-agent-cli check
 unity-agent-cli check                         # Check for compilation errors
 unity-agent-cli exec "ClassName.MethodName()"  # Execute a static C# method
 unity-agent-cli doctor                        # Diagnose connection issues
+
+# Optional: override project discovery when running from outside the project tree
+unity-agent-cli --project /path/to/UnityProject check
+UAB_PROJECT=/path/to/UnityProject unity-agent-cli check
 ```
+
+## Security
+
+The bridge exposes an `/exec` endpoint that can invoke any static C# method (including `NonPublic`) via reflection. To keep that surface from being reachable by random local processes or DNS-rebinding browser attacks, every request must carry a shared-secret token.
+
+- On first Editor load, the package generates a random 32-byte token and writes it to `<Project>/Library/UnityAgentBridge/token` with `chmod 600` on macOS/Linux. `Library/` is git-ignored by Unity convention, so the token never enters version control.
+- The CLI locates the token automatically by walking up from the current directory to find a Unity project (an `Assets/` + `Library/` pair). Override with `--project <path>` or the `UAB_PROJECT` environment variable.
+- Requests that arrive with an `Origin:` or `Referer:` header (i.e. from browsers) are rejected. Requests whose `Host:` header is not `127.0.0.1:5142` or `localhost:5142` are rejected (defeats DNS rebinding).
+
+If you lose the token file, restart the Unity Editor — a new one is generated on startup.
 
 ## AI Agent Setup
 
