@@ -414,14 +414,13 @@ public class UnityAgentServer
 
             var entry = Activator.CreateInstance(logEntryType);
 
-            int count = 0;
-            for (int attempt = 0; attempt < 4; attempt++)
-            {
-                count = (int)startMethod.Invoke(null, null);
-                if (count > 0) break;
-                endMethod.Invoke(null, null);
-                Thread.Sleep(250);
-            }
+            // PollErrors runs on EditorApplication.update — the editor MAIN
+            // thread. The previous retry-with-Thread.Sleep(250)x4 loop here
+            // could block the editor for up to 1 second every 1 second when
+            // the Console had no entries. That made Unity Play mode stutter
+            // catastrophically (4-5 frames at 5ms then a 1.2s freeze, repeat).
+            // Single attempt only — if there are no entries, return empty.
+            int count = (int)startMethod.Invoke(null, null);
 
             for (int i = 0; i < count; i++)
             {
