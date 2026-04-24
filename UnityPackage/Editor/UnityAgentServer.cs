@@ -8,12 +8,16 @@ using System.Collections.Concurrent;
 using UnityEditor;
 using UnityEngine;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 
 [InitializeOnLoad]
 public class UnityAgentServer
 {
     const int Port = 5142;
     const string Host = "127.0.0.1";
+    const string TokenHeader = "X-UAB-Token";
+    const string TokenRelativePath = "Library/UnityAgentBridge/token";
 
     static HttpListener httpListener;
     static Thread listenerThread;
@@ -21,6 +25,10 @@ public class UnityAgentServer
     static volatile bool compiling;
     static List<ErrorEntry> errorCache = new List<ErrorEntry>();
     static double nextErrorPoll;
+    static string expectedToken;
+
+    [DllImport("libc", EntryPoint = "chmod", SetLastError = true)]
+    static extern int chmod(string path, int mode);
 
     struct ErrorEntry
     {
@@ -63,6 +71,13 @@ public class UnityAgentServer
             return;
         }
 
+        expectedToken = EnsureToken();
+        if (string.IsNullOrEmpty(expectedToken))
+        {
+            Debug.LogError("[UnityAgentServer] Could not establish auth token; server not started.");
+            return;
+        }
+
         try
         {
             httpListener = new HttpListener();
@@ -75,6 +90,64 @@ public class UnityAgentServer
         catch (Exception ex)
         {
             Debug.LogError("[UnityAgentServer] Failed to start: " + ex.Message);
+        }
+    }
+
+    static string EnsureToken()
+    {
+        try
+        {
+            string projectRoot = Path.GetDirectoryName(Application.dataPath);
+            string tokenPath = Path.Combine(projectRoot, TokenRelativePath);
+            string tokenDir = Path.GetDirectoryName(tokenPath);
+
+            if (File.Exists(tokenPath))
+            {
+                string existing = File.ReadAllText(tokenPath).Trim();
+                if (!string.IsNullOrEmpty(existing) && existing.Length >= 32)
+                    return existing;
+            }
+
+            Directory.CreateDirectory(tokenDir);
+
+            byte[] bytes = new byte[32];
+            using (RNGCryptoServiceProvider rng = new RNGCryptoServiceProvider())
+            {
+                rng.GetBytes(bytes);
+            }
+            StringBuilder hex = new StringBuilder(bytes.Length * 2);
+            for (int i = 0; i < bytes.Length; i++)
+                hex.Append(bytes[i].ToString("x2"));
+            string token = hex.ToString();
+
+            File.WriteAllText(tokenPath, token);
+            HardenTokenFilePermissions(tokenPath);
+            Debug.Log("[UnityAgentServer] Generated new auth token at " + TokenRelativePath);
+            return token;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError("[UnityAgentServer] EnsureToken failed: " + ex.Message);
+            return null;
+        }
+    }
+
+    static void HardenTokenFilePermissions(string path)
+    {
+        try
+        {
+            if (Application.platform == RuntimePlatform.WindowsEditor)
+            {
+                // On Windows the file lives inside the user's project directory which is typically
+                // already user-owned. We rely on default NTFS ACLs; no explicit hardening to avoid
+                // pulling in System.Security.AccessControl which is not uniformly available in Unity Mono.
+                return;
+            }
+            chmod(path, Convert.ToInt32("600", 8));
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("[UnityAgentServer] Could not tighten token file permissions: " + ex.Message);
         }
     }
 
@@ -113,6 +186,22 @@ public class UnityAgentServer
     {
         try
         {
+            if (!IsHostAllowed(ctx.Request))
+            {
+                Reject(ctx, 403, "host");
+                return;
+            }
+            if (HasBrowserOrigin(ctx.Request))
+            {
+                Reject(ctx, 403, "origin");
+                return;
+            }
+            if (!IsTokenValid(ctx.Request))
+            {
+                Reject(ctx, 401, "auth");
+                return;
+            }
+
             switch (ctx.Request.Url.AbsolutePath)
             {
                 case "/ping":
@@ -139,6 +228,53 @@ public class UnityAgentServer
             Debug.LogError("[UnityAgentServer] Request error: " + ex.Message);
             try { ctx.Response.StatusCode = 500; ctx.Response.Close(); } catch { }
         }
+    }
+
+    static bool IsHostAllowed(HttpListenerRequest req)
+    {
+        // DNS rebinding defense: the rebound browser sends an attacker-controlled hostname in Host,
+        // not the loopback literal. HttpListener routes by URL prefix, so we check Host explicitly.
+        string host = req.UserHostName;
+        if (string.IsNullOrEmpty(host)) return false;
+        return host == Host + ":" + Port || host == "localhost:" + Port;
+    }
+
+    static bool HasBrowserOrigin(HttpListenerRequest req)
+    {
+        // CLIs don't send Origin or Referer on arbitrary POSTs; browsers always do cross-origin.
+        // Any request carrying either is rejected.
+        return !string.IsNullOrEmpty(req.Headers["Origin"])
+            || !string.IsNullOrEmpty(req.Headers["Referer"]);
+    }
+
+    static bool IsTokenValid(HttpListenerRequest req)
+    {
+        string presented = req.Headers[TokenHeader];
+        return SecureEquals(presented, expectedToken);
+    }
+
+    static bool SecureEquals(string a, string b)
+    {
+        if (a == null || b == null) return false;
+        if (a.Length != b.Length) return false;
+        int diff = 0;
+        for (int i = 0; i < a.Length; i++)
+            diff |= a[i] ^ b[i];
+        return diff == 0;
+    }
+
+    static void Reject(HttpListenerContext ctx, int status, string reason)
+    {
+        try
+        {
+            ctx.Response.StatusCode = status;
+            byte[] bytes = Encoding.UTF8.GetBytes("{\"error\":\"" + reason + "\"}");
+            ctx.Response.ContentType = "application/json";
+            ctx.Response.ContentLength64 = bytes.Length;
+            ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+            ctx.Response.OutputStream.Close();
+        }
+        catch { try { ctx.Response.Close(); } catch { } }
     }
 
     private static void HandleExec(HttpListenerContext context)
