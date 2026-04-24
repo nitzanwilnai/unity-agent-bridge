@@ -104,7 +104,7 @@ public class UnityAgentServer
             if (File.Exists(tokenPath))
             {
                 string existing = File.ReadAllText(tokenPath).Trim();
-                if (!string.IsNullOrEmpty(existing) && existing.Length >= 32)
+                if (existing.Length == 64)
                     return existing;
             }
 
@@ -430,7 +430,10 @@ public class UnityAgentServer
                 string file = (string)fileField.GetValue(entry);
                 int line = (int)lineField.GetValue(entry);
 
-                bool isError = mode == 272384 || msg.Contains("error CS") || msg.Contains("Assets/");
+                // Only flag actual C# compile errors. The original heuristic also treated any
+                // log containing "Assets/" as an error, which false-positives on Debug.Log
+                // entries whose stack traces include "Assets/" paths.
+                bool isError = msg.Contains("error CS");
                 if (isError && !string.IsNullOrEmpty(file) && !msg.StartsWith("[UnityAgentServer]"))
                 {
                     result.Add(new ErrorEntry { file = file, line = line, message = msg });
@@ -464,6 +467,25 @@ public class UnityAgentServer
     static string JsonEscape(string s)
     {
         if (s == null) return "";
-        return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
+        var sb = new StringBuilder(s.Length + 8);
+        for (int i = 0; i < s.Length; i++)
+        {
+            char c = s[i];
+            switch (c)
+            {
+                case '\\': sb.Append("\\\\"); break;
+                case '"':  sb.Append("\\\""); break;
+                case '\n': sb.Append("\\n");  break;
+                case '\r': /* strip CR */     break;
+                case '\t': sb.Append("\\t");  break;
+                case '\b': sb.Append("\\b");  break;
+                case '\f': sb.Append("\\f");  break;
+                default:
+                    if (c < 0x20) sb.Append("\\u").Append(((int)c).ToString("x4"));
+                    else          sb.Append(c);
+                    break;
+            }
+        }
+        return sb.ToString();
     }
 }
