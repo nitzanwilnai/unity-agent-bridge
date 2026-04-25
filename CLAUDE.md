@@ -9,3 +9,13 @@ unity-agent-cli exec "ClassName.MethodName()"
 ```
 
 If you're having trouble connecting, run `unity-agent-cli doctor` for diagnostics.
+
+**If `unity-agent-cli` is not installed:** DO NOT run `npm install -g unity-agent-cli` — the package is not on the npm registry. It must be installed from a local clone of https://github.com/nitzanwilnai/unity-agent-bridge:
+
+```bash
+git clone https://github.com/nitzanwilnai/unity-agent-bridge.git
+cd unity-agent-bridge/CLI
+npm install -g .
+```
+
+Ask the user where they've cloned the repo (or to clone it) before attempting the install.

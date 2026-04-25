@@ -66,6 +66,14 @@ Add to your project's `CLAUDE.md` or equivalent:
 ```
 Whenever you create or modify a `.cs` file, verify compilation with: unity-agent-cli check
 If exit code 1, read the errors, fix, and retry until exit code 0.
+
+If `unity-agent-cli` is not installed, DO NOT run `npm install -g unity-agent-cli` —
+the package is not on the npm registry. Install it from a local clone:
+
+    git clone https://github.com/nitzanwilnai/unity-agent-bridge.git
+    cd unity-agent-bridge/CLI && npm install -g .
+
+Ask the user where the repo is cloned (or to clone it) before attempting install.
 ```
 
 ## What You Can Build With `exec`
