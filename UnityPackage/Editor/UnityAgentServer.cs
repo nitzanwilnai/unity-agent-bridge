@@ -39,6 +39,14 @@ public class UnityAgentServer
 
     static UnityAgentServer()
     {
+        // Skip in batchmode (AssetImportWorkers, CI builds, headless Editor invocations).
+        // Workers load Editor assemblies and would otherwise race with the main Editor for
+        // port 5142 — and on Unity 6.x it's common for an AssetImportWorker to win that race
+        // and leave the bridge bound to a worker process that can't actually drive the
+        // interactive Editor (no Play mode, stale assemblies on .cs change). Skipping here
+        // means only the interactive Editor runs the listener.
+        if (Application.isBatchMode) return;
+
         EditorApplication.update += Tick;
         AppDomain.CurrentDomain.DomainUnload += (_, __) => Shutdown();
         Boot();
