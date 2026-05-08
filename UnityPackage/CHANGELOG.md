@@ -3,6 +3,12 @@
 All notable changes to this package are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.1] - 2026-05-06
+
+### Fixed
+
+- Server no longer starts in batchmode Unity processes (AssetImportWorkers, CI/headless `-batchmode` invocations). Workers were loading Editor assemblies and running the `[InitializeOnLoad]` constructor, racing the interactive Editor for port 5142. On Unity 6.x the worker often won that race, leaving the bridge bound to a process that couldn't drive the interactive Editor (no Play mode, stale assemblies on `.cs` changes). `unity-agent-cli` saw correct-looking `ping`/`doctor` output but `exec` calls failed or returned truncated responses ("Method not found", "Invalid JSON"). One-line `Application.isBatchMode` early-out in the `UnityAgentServer` static constructor; only the interactive Editor binds the listener now.
+
 ## [0.3.0] - 2026-04-23
 
 ### Security
